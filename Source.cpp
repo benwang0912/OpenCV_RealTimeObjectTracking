@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sstream>
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 using namespace cv;
@@ -26,6 +27,10 @@ void CallbackForUpperV(int val, void * userData);
 
 void openingOperation();
 void closingOperation();
+
+void trackObj(const Mat thresholdedImg, Mat &frame);
+void tagObjectPosition(Mat &frame, int x, int y);
+
 int main() {
 	
 	VideoCapture capture(0);
@@ -37,7 +42,7 @@ int main() {
 	Trackerbar();
 
 	namedWindow("Video", WINDOW_AUTOSIZE);
-	
+	namedWindow("Threshold", WINDOW_AUTOSIZE);
 	while (1) {
 		bool succeed = capture.read(frame);
 		if (!succeed) {
@@ -52,14 +57,15 @@ int main() {
 		//openingOperation();
 		closingOperation();
 
-		imshow("Video", thresholdedImg);
+		trackObj(thresholdedImg, frame);
+
+		imshow("Threshold", thresholdedImg);
+		imshow("Video", frame);
 
 		if (waitKey(30) == 27) {
 			break;
 		}
-
 	}
-
 }
 
 void Trackerbar() {
@@ -113,4 +119,53 @@ void closingOperation() {
 
 	erode(thresholdedImg, thresholdedImg, erodeMat);
 	erode(thresholdedImg, thresholdedImg, erodeMat);
+}
+
+void trackObj(const Mat thresholdedImg, Mat &frame) {
+	
+	Mat temp;
+	thresholdedImg.copyTo(temp);
+
+	std::vector<std::vector<Point>> contours;
+	std::vector<Vec4i> hierarchy;	//[Next, Previous, First_Child, Parent]	
+	
+	findContours(temp, contours, hierarchy,CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
+	/*for more detail about findContours, see the link below
+	http://docs.opencv.org/3.1.0/d9/d8b/tutorial_py_contours_hierarchy.html#gsc.tab=0
+	*/
+	int x, y;
+	double area = 0;
+	bool objFound = false;
+
+	if (hierarchy.size() > 0) {
+		if (hierarchy.size() < 5) {	//If hierarchy.size() is over 5, there may be too many noise.
+			for (int i = 0; i >= 0; i = hierarchy[i][0]) {
+				Moments moment = moments(contours[i]);
+				double area = moment.m00;
+
+				if (area > 50*50 && area < 300*300) {
+					x = moment.m10 / area;
+					y = moment.m01 / area;
+					objFound = true;
+				}
+				else {
+					objFound = false;
+				}
+				if (objFound) {
+					tagObjectPosition(frame, x, y);
+				}
+			}
+		}
+		else 
+			putText(frame, "TOO MUCH NOISE! ADJUST FILTER", Point(0, 50), 1, 2, Scalar(0, 0, 255), 2);
+	}
+}
+
+void tagObjectPosition(Mat &frame, int x, int y) {
+	circle(frame, cv::Point(x, y), 10, cv::Scalar(0, 0, 255));
+	
+	std::ostringstream string;
+	string << x << " , " << y;
+	
+	putText(frame, string.str(), cv::Point(x, y + 20), 1, 1, Scalar(0, 255, 0));
 }
